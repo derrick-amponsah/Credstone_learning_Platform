@@ -1,0 +1,9 @@
+<!-- @dsCard group="Forms" height=420 subtitle="Text input, textarea, error and disabled" -->
+<meta charset="utf-8"><link rel="stylesheet" href="../../tokens.css"><link rel="stylesheet" href="../bundle.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&family=Source+Code+Pro:wght@400;600;700&display=swap">
+<style>html{background:var(--surface)}body{margin:0;padding:24px;background:var(--surface)}</style>
+<div class="cs-root" style="display:grid;gap:20px;max-width:460px">
+<div class="cs-field"><label class="cs-label" for="a">Work email</label><input id="a" class="cs-input" type="email" value="ama@example.com"><span class="cs-hint">We use this for your certificates.</span></div>
+<div class="cs-field"><label class="cs-label" for="b">Course code</label><input id="b" class="cs-input cs-input--error" aria-invalid="true" value="TECH-1O1"><span class="cs-error"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18h.01"/></svg> Codes use numbers, for example TECH-101.</span></div>
+<div class="cs-field"><label class="cs-label" for="c">Your answer</label><textarea id="c" class="cs-input">I would roll back the release first.</textarea></div>
+<div class="cs-field"><label class="cs-label" for="d">Organisation</label><input id="d" class="cs-input" disabled value="Set by your administrator"></div></div>

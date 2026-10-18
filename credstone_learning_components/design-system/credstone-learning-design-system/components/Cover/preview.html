@@ -1,0 +1,31 @@
+<!-- @dsCard height=320 -->
+<meta charset="utf-8"><link rel="stylesheet" href="../../tokens.css"><link rel="stylesheet" href="../bundle.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap">
+<style>
+body{margin:0;background:var(--surface)}
+.cover{position:relative;width:960px;height:320px;overflow:hidden;background:var(--surface)}
+.cover svg{position:absolute;left:480px;top:0}
+.cover .txt{position:absolute;left:40px;bottom:36px;width:400px}
+.cover h1{margin:0;font-family:var(--font-serif);font-weight:700;font-size:80px;line-height:.95;color:var(--navy)}
+.cover p{margin:16px 0 0;font-family:var(--font-sans);font-size:14px;line-height:20px;color:var(--ink-muted)}
+.navy{fill:var(--navy)}.gold{fill:var(--gold)}.sand{fill:var(--sand)}.req{fill:var(--required-ink)}
+.ring{fill:none;stroke:var(--gold-soft);stroke-width:2}
+.slab{rx:var(--radius-xl)}.sq{rx:var(--radius-lg)}.sm{rx:var(--radius-md)}
+</style>
+<div class="cover">
+  <!-- derivation
+  blocks: navy 240x232 (space-10 x 5.8) flush top-left; gold 144x144 (space-12 x 3); sand 144x96; required-ink 40x40.
+  arrangement: one tall navy slab with satellites stepping down to the right, like a certificate on a desk.
+  pattern: concentric seal rings (gold-soft hairlines, 2px) inside the navy slab; a certificate has a seal, and the product awards certificates.
+  steps and radii: radius-xl on the slab, radius-lg on gold and sand, radius-md on the small block; sizes are multiples of space-1 and space-3. -->
+  <svg width="480" height="320" viewBox="0 0 480 320" aria-hidden="true">
+    <rect class="navy slab" x="0" y="-14" width="240" height="246"/>
+    <circle class="ring" cx="120" cy="116" r="28"/>
+    <circle class="ring" cx="120" cy="116" r="52"/>
+    <circle class="ring" cx="120" cy="116" r="76"/>
+    <rect class="gold sq" x="256" y="48" width="144" height="144"/>
+    <rect class="sand sq" x="256" y="208" width="144" height="96"/>
+    <rect class="req sm" x="416" y="152" width="40" height="40"/>
+  </svg>
+  <div class="txt"><h1>Credstone Learning</h1><p>Clear, calm learning for every level of the workforce.</p></div>
+</div>
