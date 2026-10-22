@@ -8,14 +8,62 @@ import { I, Logo, Loading, Empty, Btn } from './ui';
 
 type Nav = [string, string, string][];
 const NAV: Record<string, Nav> = {
-  learner: [['home', 'Home', '/'], ['book', 'My Learning', '/my-learning'], ['layers', 'Catalogue', '/catalogue'], ['award', 'Credentials', '/credentials'], ['calendar', 'Calendar', '/calendar'], ['mail', 'Messages', '/messages']],
-  instructor: [['home', 'Home', '/'], ['book', 'My Learning', '/my-learning'], ['layers', 'Catalogue', '/catalogue'], ['pencil', 'Content Studio', '/studio'], ['calendar', 'Calendar', '/calendar'], ['mail', 'Messages', '/messages']],
-  training_owner: [['home', 'Home', '/'], ['book', 'My Learning', '/my-learning'], ['layers', 'Catalogue', '/catalogue'], ['checkc', 'Course Approvals', '/approvals'], ['chart', 'Analytics', '/training'], ['mail', 'Messages', '/messages']],
-  supervisor: [['home', 'Home', '/'], ['book', 'My Learning', '/my-learning'], ['layers', 'Catalogue', '/catalogue'], ['chart', 'Training View', '/team'], ['calendar', 'Calendar', '/calendar'], ['mail', 'Messages', '/messages']],
-  assessor: [['home', 'Home', '/'], ['checkc', 'Review queue', '/review'], ['file', 'Submissions', '/review'], ['layers', 'Courses', '/catalogue'], ['calendar', 'Calendar', '/calendar'], ['mail', 'Messages', '/messages']],
-  admin: [['home', 'Home', '/admin/users'], ['users', 'Users', '/admin/users'], ['layers', 'Groups & teams', '/admin/groups'], ['key', 'Roles', '/admin/roles'], ['chart', 'Reports', '/training'], ['mail', 'Messages', '/messages']],
+  learner: [
+    ['home', 'Home', '/'],
+    ['book', 'My Learning', '/my-learning'],
+    ['layers', 'Catalogue', '/catalogue'],
+    ['award', 'Credentials', '/credentials'],
+    ['calendar', 'Calendar', '/calendar'],
+    ['mail', 'Messages', '/messages'],
+  ],
+  instructor: [
+    ['pencil', 'Content Studio', '/studio'],
+    ['calendar', 'Calendar', '/calendar'],
+    ['mail', 'Messages', '/messages'],
+  ],
+  training_owner: [
+    ['checkc', 'Approvals', '/approvals'],
+    ['chart', 'Analytics', '/training'],
+    ['calendar', 'Calendar', '/calendar'],
+    ['mail', 'Messages', '/messages'],
+  ],
+  supervisor: [
+    ['chart', 'Team Training', '/team'],
+    ['calendar', 'Calendar', '/calendar'],
+    ['mail', 'Messages', '/messages'],
+  ],
+  assessor: [
+    ['checkc', 'Review Queue', '/review'],
+    ['calendar', 'Calendar', '/calendar'],
+    ['mail', 'Messages', '/messages'],
+  ],
+  admin: [
+    ['users', 'Users', '/admin/users'],
+    ['layers', 'Groups & Teams', '/admin/groups'],
+    ['key', 'Roles', '/admin/roles'],
+    ['shield', 'Audit Trail', '/admin/audit'],
+    ['chart', 'Reports', '/training'],
+    ['mail', 'Messages', '/messages'],
+  ],
 };
-const SEARCH: Record<string, string> = { learner: 'Search the catalogue...', instructor: 'Search in creator studio...', training_owner: 'Search courses for approval...', supervisor: 'Search people or courses...', assessor: 'Search submissions...', admin: 'Search users, teams or roles...' };
+
+export const HOME_ROUTE: Record<string, string> = {
+  learner: '/',
+  instructor: '/studio',
+  training_owner: '/approvals',
+  supervisor: '/team',
+  assessor: '/review',
+  admin: '/admin/users',
+};
+
+const SEARCH: Record<string, string> = {
+  learner: 'Search the catalogue...',
+  instructor: 'Search in creator studio...',
+  training_owner: 'Search courses for approval...',
+  supervisor: 'Search people or courses...',
+  assessor: 'Search submissions...',
+  admin: 'Search users, teams or roles...',
+};
 
 export default function Shell({ children, back, allow, noSearch }: { children: React.ReactNode; back?: { href: string; label: string }; allow?: string[]; noSearch?: boolean }) {
   const { user, active, setActive, signOut } = useSession();
@@ -36,26 +84,44 @@ export default function Shell({ children, back, allow, noSearch }: { children: R
   const nav = NAV[active] || NAV.learner;
   const isOn = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
   const name = `${user.firstName} ${user.lastName}`;
+  const homeUrl = HOME_ROUTE[active] || '/';
 
   return (
     <div className="m-app app">
       <a href="#main" className="skip">Skip to content</a>
       <aside className="m-side">
-        <div className="m-brand"><Logo /><span>Credstone<br />Learning</span></div>
+        <Link href={homeUrl} className="m-brand" style={{ textDecoration: 'none' }}>
+          <Logo />
+          <span>Credstone<br />Learning</span>
+        </Link>
         <nav aria-label="Main" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {nav.map(([ic, label, href], i) => (
-            <Link key={label + i} href={href} className={`m-nav ${isOn(href) && !(label === 'Submissions') ? 'on' : ''}`} aria-current={isOn(href) ? 'page' : undefined}><I n={ic} s={22} /><span>{label}</span></Link>
+            <Link key={label + i} href={href} className={`m-nav ${isOn(href) ? 'on' : ''}`} aria-current={isOn(href) ? 'page' : undefined}>
+              <I n={ic} s={22} />
+              <span>{label}</span>
+            </Link>
           ))}
         </nav>
         <div className="m-sp" />
-        <Link href="/settings" className={`m-nav ${path.startsWith('/settings') ? 'on' : ''}`}><I n="settings" s={22} /><span>Settings</span></Link>
+        <Link href="/settings" className={`m-nav ${path.startsWith('/settings') ? 'on' : ''}`}>
+          <I n="settings" s={22} />
+          <span>Settings</span>
+        </Link>
       </aside>
       <div className="m-main" style={{ position: 'relative' }}>
         <header className="m-top">
           {back ? (
             <Link href={back.href} className="m-back"><I n="back" /><span>{back.label}</span></Link>
           ) : noSearch ? null : (
-            <form className="m-search" role="search" onSubmit={(e) => { e.preventDefault(); router.push(`/catalogue?q=${encodeURIComponent(term)}`); }}>
+            <form className="m-search" role="search" onSubmit={(e) => {
+              e.preventDefault();
+              if (active === 'learner') router.push(`/catalogue?q=${encodeURIComponent(term)}`);
+              else if (active === 'instructor') router.push(`/studio?q=${encodeURIComponent(term)}`);
+              else if (active === 'training_owner') router.push(`/approvals?q=${encodeURIComponent(term)}`);
+              else if (active === 'supervisor') router.push(`/team?q=${encodeURIComponent(term)}`);
+              else if (active === 'assessor') router.push(`/review?q=${encodeURIComponent(term)}`);
+              else if (active === 'admin') router.push(`/admin/users?q=${encodeURIComponent(term)}`);
+            }}>
               <I n="search" /><input aria-label="Search" value={term} onChange={(e) => setTerm(e.target.value)} placeholder={SEARCH[active]} style={{ border: 0, outline: 0, flex: 1, font: 'inherit', background: 'transparent' }} />
             </form>
           )}
@@ -69,7 +135,16 @@ export default function Shell({ children, back, allow, noSearch }: { children: R
             {user.roles.length > 1 && (
               <div className="m-field"><label htmlFor="viewas" style={{ fontSize: 14 }}>View as</label>
                 <div className="m-in" style={{ height: 42 }}>
-                  <select id="viewas" value={active} onChange={(e) => { setActive(e.target.value); setMenu(false); router.push('/'); }}>
+                  <select
+                    id="viewas"
+                    value={active}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      setActive(nextRole);
+                      setMenu(false);
+                      router.push(HOME_ROUTE[nextRole] || '/');
+                    }}
+                  >
                     {user.roles.map((r: string) => <option key={r} value={r}>{ROLE_NAMES[r]}</option>)}
                   </select>
                 </div>
@@ -80,7 +155,7 @@ export default function Shell({ children, back, allow, noSearch }: { children: R
           </div>
         )}
         <main id="main" className="m-body">
-          {denied ? <Empty icon="lock" title="You do not have access to this page" text="Ask your administrator if you need a different role." action={<Btn href="/">Go home</Btn>} /> : children}
+          {denied ? <Empty icon="lock" title="You do not have access to this page" text="Ask your administrator if you need a different role." action={<Btn href={homeUrl}>Go home</Btn>} /> : children}
         </main>
       </div>
     </div>
@@ -89,9 +164,60 @@ export default function Shell({ children, back, allow, noSearch }: { children: R
 
 export function Head({ eye, title, sub, children }: { eye?: string; title: string; sub?: string; children?: React.ReactNode }) {
   return (
-    <div className="m-row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', flex: 'none', gap: 16 }}>
-      <div>{eye && <div className="m-eye">{eye}</div>}<h1 className="m-h1">{title}</h1>{sub && <div className="m-sub" style={{ marginTop: 4 }}>{sub}</div>}</div>
-      <div className="m-row" style={{ gap: 10 }}>{children}</div>
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+        flexWrap: 'wrap',
+        gap: 16,
+        flex: 'none',
+        width: '100%',
+        minWidth: 0,
+      }}
+    >
+      <div style={{ flex: '1 1 320px', minWidth: 0, maxWidth: '100%' }}>
+        {eye && <div className="m-eye">{eye}</div>}
+        <h1
+          className="m-h1"
+          style={{
+            overflowWrap: 'break-word',
+            wordBreak: 'normal',
+            hyphens: 'auto',
+            lineHeight: 1.25,
+            margin: '2px 0 0',
+          }}
+        >
+          {title}
+        </h1>
+        {sub && (
+          <div
+            className="m-sub"
+            style={{
+              marginTop: 4,
+              overflowWrap: 'break-word',
+              wordBreak: 'normal',
+            }}
+          >
+            {sub}
+          </div>
+        )}
+      </div>
+
+      {children && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            flexShrink: 0,
+            alignSelf: 'flex-start',
+          }}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }

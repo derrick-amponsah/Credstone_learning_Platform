@@ -8,6 +8,15 @@ create table if not exists roles (
   description text not null default ''
 );
 
+insert into roles(key, name, description) values
+  ('learner', 'Learner', 'Learns, practises and submits evidence.'),
+  ('instructor', 'Content instructor', 'Drafts lessons, assessments and rubrics in the Content Studio.'),
+  ('training_owner', 'Training owner', 'Approves versions and monitors effectiveness.'),
+  ('assessor', 'Assessor', 'Grades practical work against a rubric.'),
+  ('supervisor', 'Supervisor', 'Sees their own team and records observations.'),
+  ('admin', 'Platform administrator', 'Manages access, groups and retention. Does not approve content or grade work.')
+on conflict (key) do nothing;
+
 create table if not exists users (
   id uuid primary key default gen_random_uuid(),
   first_name text not null,
@@ -85,6 +94,7 @@ create table if not exists courses (
   author_id uuid references users(id),
   prerequisite_id uuid references courses(id),
   pass_mark int not null default 80,
+  quiz_time_limit_minutes int not null default 10,
   requires_practical boolean not null default false,
   requires_observation boolean not null default false,
   task_prompt text,
@@ -107,6 +117,7 @@ create table if not exists lessons (
   kind text not null default 'Video',
   transcript text,
   video_url text,
+  document_url text,
   source_ref text,
   status text not null default 'empty' check (status in ('ready','needs_source','empty'))
 );
@@ -124,6 +135,9 @@ create table if not exists course_comments (
   course_id uuid not null references courses(id) on delete cascade,
   author_id uuid not null references users(id),
   body text not null,
+  resolved boolean not null default false,
+  resolved_by uuid references users(id),
+  resolved_at timestamptz,
   created_at timestamptz not null default now()
 );
 

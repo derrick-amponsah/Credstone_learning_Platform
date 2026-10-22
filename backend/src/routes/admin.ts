@@ -36,7 +36,9 @@ export default async function (app: FastifyInstance) {
       [status || null, term ? `%${term}%` : null]
     );
     const counts = await q('select status, count(*)::int n from users group by status');
-    return { users, counts: Object.fromEntries(counts.map((c) => [c.status, c.n])) };
+    const countsMap = Object.fromEntries(counts.map((c) => [c.status, c.n]));
+    const total = counts.reduce((acc, c) => acc + c.n, 0);
+    return { users, counts: { ...countsMap, total, '': total } };
   });
 
   // Path 1: approve a sign-up and assign a role (and optionally a team).

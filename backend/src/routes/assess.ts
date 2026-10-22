@@ -1,10 +1,9 @@
 import { FastifyInstance } from 'fastify';
-import fs from 'fs';
 import { z } from 'zod';
 import { q, one } from '../db';
 import { audit, notify } from '../audit';
 import { config } from '../config';
-import { filePath } from '../storage';
+import { getFileStream } from '../storage';
 import { maybeIssue } from '../services/credentials';
 
 const err = (m: string, code = 400) => Object.assign(new Error(m), { statusCode: code });
@@ -33,10 +32,14 @@ export default async function (app: FastifyInstance) {
 
   app.get('/assess/submissions/:id/file', R, async (req, reply) => {
     const s = await one('select file_key, file_name from submissions where id = $1', [(req.params as any).id]);
-    if (!s?.fileKey || !fs.existsSync(filePath(s.fileKey))) throw err('No file was uploaded.', 404);
+    if (!s?.fileKey) throw err('No file was uploaded.', 404);
+    const result = await getFileStream(s.fileKey);
+    if (!result) throw err('File not found in storage.', 404);
     await audit(req.uid, 'evidence.download', 'submission', (req.params as any).id);
-    reply.header('Content-Disposition', `attachment; filename="${s.fileName}"`);
-    return reply.send(fs.createReadStream(filePath(s.fileKey)));
+    reply.header('Content-Type', result.contentType);
+    reply.header('Content-Length', result.size);
+    reply.header('Content-Disposition', `attachment; filename="${s.fileName || 'submission'}"`);
+    return reply.send(result.stream);
   });
 
   app.post('/assess/submissions/:id/review', R, async (req) => {

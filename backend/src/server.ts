@@ -1,4 +1,3 @@
-import fs from 'fs';
 import path from 'path';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
@@ -6,7 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { ZodError } from 'zod';
 import { config } from './config';
-import { filePath } from './storage';
+import { getFileStream } from './storage';
 import auth from './auth';
 import authRoutes from './routes/auth';
 import adminRoutes from './routes/admin';
@@ -43,44 +42,26 @@ async function main() {
   app.get('/health', async () => ({ ok: true }));
 
   // Media Streaming Endpoint (Supports HTTP Range / 206 for smooth video seeking & HTML5 player)
+  // Works transparently with both local disk and S3 / MinIO storage drivers.
   app.get('/media/:key', async (req, reply) => {
     const { key } = req.params as any;
-    const sanitized = path.basename(key);
-    const file = filePath(sanitized);
-    if (!fs.existsSync(file)) return reply.code(404).send({ error: 'Media file not found.' });
+    const result = await getFileStream(key, req.headers.range);
+    if (!result) return reply.code(404).send({ error: 'Media file not found.' });
 
-    const stat = fs.statSync(file);
-    const ext = path.extname(sanitized).toLowerCase();
-    const mimeMap: Record<string, string> = {
-      '.mp4': 'video/mp4',
-      '.webm': 'video/webm',
-      '.mov': 'video/quicktime',
-      '.m4v': 'video/x-m4v',
-      '.pdf': 'application/pdf',
-      '.txt': 'text/plain',
-    };
-    const contentType = mimeMap[ext] || 'application/octet-stream';
-
-    const range = req.headers.range;
-    if (range) {
-      const parts = range.replace(/bytes=/, '').split('-');
-      const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : stat.size - 1;
-      const chunksize = end - start + 1;
-      const stream = fs.createReadStream(file, { start, end });
-
-      reply.code(206);
-      reply.header('Content-Range', `bytes ${start}-${end}/${stat.size}`);
-      reply.header('Accept-Ranges', 'bytes');
-      reply.header('Content-Length', chunksize);
-      reply.header('Content-Type', contentType);
-      return reply.send(stream);
-    }
-
-    reply.header('Content-Length', stat.size);
+    const { stream, size, contentType, start, end, isPartial } = result;
     reply.header('Content-Type', contentType);
     reply.header('Accept-Ranges', 'bytes');
-    return reply.send(fs.createReadStream(file));
+    reply.header('Content-Disposition', `inline; filename="${path.basename(key)}"`);
+
+    if (isPartial && start !== undefined && end !== undefined) {
+      const chunksize = end - start + 1;
+      reply.code(206);
+      reply.header('Content-Range', `bytes ${start}-${end}/${size}`);
+      reply.header('Content-Length', chunksize);
+    } else {
+      reply.header('Content-Length', size);
+    }
+    return reply.send(stream);
   });
 
   for (const r of [authRoutes, adminRoutes, learnerRoutes, studioRoutes, assessRoutes, teamRoutes, calendarRoutes, messagesRoutes]) await app.register(r);

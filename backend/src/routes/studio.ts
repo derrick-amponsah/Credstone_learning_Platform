@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { q, one } from '../db';
 import { audit, notify, notifyRole } from '../audit';
 import { config } from '../config';
-import { saveFile } from '../storage';
+import { saveFile, deleteFile } from '../storage';
 import { enrolUsers } from '../services/credentials';
 
 const err = (m: string, code = 400) => Object.assign(new Error(m), { statusCode: code });
@@ -62,12 +62,19 @@ export default async function (app: FastifyInstance) {
   app.get('/studio/courses/:id', INSTR, async (req) => {
     const { id } = req.params as any;
     const c = await one(
-      'select id, title, version, status, objective, task_prompt as "taskPrompt", requires_practical as "requiresPractical" from courses where id = $1',
+      'select id, title, version, status, objective, prerequisite_id as "prerequisiteId", task_prompt as "taskPrompt", requires_practical as "requiresPractical", pass_mark as "passMark", quiz_time_limit_minutes as "quizTimeLimitMinutes" from courses where id = $1',
       [id]
     );
     if (!c) throw err('That course was not found.', 404);
-    const lessons = await q('select id, position, title, status, minutes, transcript, video_url as "videoUrl", source_ref as "sourceRef" from lessons where course_id = $1 order by position', [id]);
-    const sources = await q('select id, name from source_materials where course_id = $1 order by created_at', [id]);
+    const availablePrerequisites = await q(
+      `select id, code, title, level, category from courses where id <> $1 and kind = 'course' and (prerequisite_id is null or prerequisite_id <> $1) order by level asc, title asc`,
+      [id]
+    );
+    const prerequisiteCourse = c.prerequisiteId
+      ? await one('select id, code, title, level from courses where id = $1', [c.prerequisiteId])
+      : null;
+    const lessons = await q('select id, position, title, status, minutes, kind, transcript, video_url as "videoUrl", document_url as "documentUrl", source_ref as "sourceRef" from lessons where course_id = $1 order by position', [id]);
+    const sources = await q('select id, name, file_key as "fileKey", created_at as "createdAt" from source_materials where course_id = $1 order by created_at desc', [id]);
     const ai = await q('select id, prompt, source_ref as "sourceRef" from questions where course_id = $1 and ai_drafted and accepted_by is null order by position', [id]);
     const questions = await q(
       `select q.id, q.position, q.prompt, q.explanation, q.source_ref as "sourceRef", q.ai_drafted as "aiDrafted",
@@ -78,12 +85,23 @@ export default async function (app: FastifyInstance) {
        group by q.id order by q.position`,
       [id]
     );
-    const comments = await q('select cc.body, cc.created_at, u.first_name || \' \' || u.last_name as author, u.first_name from course_comments cc join users u on u.id = cc.author_id where cc.course_id = $1 order by cc.created_at desc limit 5', [id]);
+    const comments = await q(
+      `select cc.id, cc.body, cc.created_at as "createdAt", cc.resolved, cc.resolved_at as "resolvedAt",
+              u.first_name || ' ' || u.last_name as author, u.first_name as "firstName",
+              ru.first_name || ' ' || ru.last_name as "resolvedBy"
+       from course_comments cc
+       join users u on u.id = cc.author_id
+       left join users ru on ru.id = cc.resolved_by
+       where cc.course_id = $1
+       order by cc.resolved asc, cc.created_at desc limit 20`,
+      [id]
+    );
     const qc = await one('select count(*)::int n from questions where course_id = $1 and (not ai_drafted or accepted_by is not null)', [id]);
     const rubricCriteria = await q('select id, position, title, text from rubric_criteria where course_id = $1 order by position', [id]);
 
     return {
-      course: c,
+      course: { ...c, prerequisiteCourse },
+      availablePrerequisites,
       lessons,
       sources,
       ai,
@@ -111,28 +129,99 @@ export default async function (app: FastifyInstance) {
     return { added: n };
   });
 
+  // Delete uploaded source material - INSTRUCTOR ONLY
+  app.delete('/studio/sources/:id', INSTR, async (req) => {
+    const { id } = req.params as any;
+    const source = await one(
+      'select sm.id, sm.course_id, sm.name, sm.file_key as "fileKey", c.status from source_materials sm join courses c on c.id = sm.course_id where sm.id = $1',
+      [id]
+    );
+    if (!source) throw err('Source material not found.', 404);
+    if (source.status !== 'draft') throw err('Cannot remove source material from a course that is not in draft status.', 400);
+
+    await q('delete from source_materials where id = $1', [id]);
+    deleteFile(source.fileKey);
+    await audit(req.uid, 'source.delete', 'course', source.course_id, { sourceId: id, name: source.name });
+    return { ok: true, id };
+  });
+
+  // Delete draft course - INSTRUCTOR ONLY
+  app.delete('/studio/courses/:id', INSTR, async (req) => {
+    const { id } = req.params as any;
+    const c = await one('select id, title, status from courses where id = $1', [id]);
+    if (!c) throw err('Course not found.', 404);
+    if (c.status !== 'draft') throw err('Only draft courses can be deleted.', 400);
+
+    // Clean up uploaded source files from disk
+    const sources = await q('select file_key as "fileKey" from source_materials where course_id = $1', [id]);
+    for (const s of sources) {
+      deleteFile(s.fileKey);
+    }
+
+    // Clean up uploaded lesson videos and documents from disk
+    const lessons = await q("select video_url as \"videoUrl\", document_url as \"documentUrl\" from lessons where course_id = $1", [id]);
+    for (const l of lessons) {
+      if (l.videoUrl && l.videoUrl.startsWith('/api/media/')) {
+        const key = l.videoUrl.replace('/api/media/', '');
+        deleteFile(key);
+      }
+      if (l.documentUrl && l.documentUrl.startsWith('/api/media/')) {
+        const key = l.documentUrl.replace('/api/media/', '');
+        deleteFile(key);
+      }
+    }
+
+    await q("delete from courses where id = $1 and status = 'draft'", [id]);
+    await audit(req.uid, 'course.delete', 'course', id, { title: c.title });
+    return { ok: true, id };
+  });
+
   app.patch('/studio/courses/:id', INSTR, async (req) => {
     const b = z.object({
       title: z.string().trim().min(1).optional(),
       objective: z.string().trim().optional(),
       taskPrompt: z.string().trim().nullish(),
       requiresPractical: z.boolean().optional(),
+      passMark: z.number().int().min(1).max(100).optional(),
+      quizTimeLimitMinutes: z.number().int().min(0).max(180).optional(),
+      prerequisiteId: z.string().uuid().nullable().optional(),
     }).parse(req.body);
+
+    const id = (req.params as any).id;
+
+    if (b.prerequisiteId !== undefined) {
+      if (b.prerequisiteId === id) {
+        throw err('A course cannot be a prerequisite of itself.', 400);
+      }
+      if (b.prerequisiteId) {
+        const cycle = await one('select id from courses where id = $1 and prerequisite_id = $2', [b.prerequisiteId, id]);
+        if (cycle) {
+          throw err('Cannot set prerequisite: that course already requires this course as a prerequisite.', 400);
+        }
+      }
+    }
 
     await q(
       `update courses set
          title = coalesce($2, title),
          objective = coalesce($3, objective),
          task_prompt = case when $4::boolean then $5 else task_prompt end,
-         requires_practical = coalesce($6, requires_practical)
+         requires_practical = coalesce($6, requires_practical),
+         pass_mark = coalesce($7, pass_mark),
+         quiz_time_limit_minutes = coalesce($8, quiz_time_limit_minutes),
+         prerequisite_id = case when $9::boolean then $10 else prerequisite_id end
        where id = $1`,
       [
-        (req.params as any).id,
+        id,
         b.title ?? null,
         b.objective ?? null,
         b.taskPrompt !== undefined,
         b.taskPrompt ?? null,
         b.requiresPractical ?? null,
+        b.passMark ?? null,
+        b.quizTimeLimitMinutes ?? null,
+        b.prerequisiteId !== undefined,
+        b.prerequisiteId ?? null,
       ]
     );
     return { ok: true };
@@ -165,37 +254,68 @@ export default async function (app: FastifyInstance) {
     const b = z.object({
       title: z.string().trim().min(1, 'Name the lesson.'),
       minutes: z.number().int().min(1).default(5),
+      kind: z.enum(['Video', 'Document']).default('Video'),
       videoUrl: z.string().trim().nullish(),
+      documentUrl: z.string().trim().nullish(),
       transcript: z.string().trim().nullish(),
       sourceRef: z.string().trim().nullish(),
     }).parse(req.body);
     const n = await one('select coalesce(max(position), 0) + 1 as p from lessons where course_id = $1', [(req.params as any).id]);
-    const status = (b.sourceRef && b.sourceRef.trim()) ? 'ready' : 'needs_source';
+    // A lesson is 'ready' when it has a source reference. For Document lessons also being 'ready' if a document is attached.
+    const hasSource = !!(b.sourceRef && b.sourceRef.trim());
+    const hasDocument = b.kind === 'Document' && !!(b.documentUrl && b.documentUrl.trim());
+    const status = (hasSource || hasDocument) ? 'ready' : 'needs_source';
+    // Ensure document_url column exists (idempotent)
+    await q('alter table lessons add column if not exists document_url text', []);
     return one(
-      `insert into lessons(course_id, position, title, minutes, video_url, transcript, source_ref, status)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-      [(req.params as any).id, n.p, b.title, b.minutes, b.videoUrl || null, b.transcript || null, b.sourceRef || null, status]
+      `insert into lessons(course_id, position, title, minutes, kind, video_url, document_url, transcript, source_ref, status)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+      [(req.params as any).id, n.p, b.title, b.minutes, b.kind, b.videoUrl || null, b.documentUrl || null, b.transcript || null, b.sourceRef || null, status]
     );
   });
 
   app.patch('/studio/lessons/:id', INSTR, async (req) => {
     const b = z.object({
       title: z.string().trim().min(1).optional(),
-      sourceRef: z.string().trim().optional(),
+      kind: z.enum(['Video', 'Document']).optional(),
+      sourceRef: z.string().trim().nullish(),
       videoUrl: z.string().trim().nullish(),
+      documentUrl: z.string().trim().nullish(),
       transcript: z.string().trim().nullish(),
       minutes: z.number().int().min(1).optional(),
     }).parse(req.body);
+    // Ensure document_url column exists (idempotent)
+    await q('alter table lessons add column if not exists document_url text', []);
+    // Determine status: ready if sourceRef provided, or if Document kind with a document attached
+    const updatedKind = b.kind;
+    const updatedSourceRef = b.sourceRef;
+    const updatedDocUrl = b.documentUrl;
     await q(
       `update lessons set
          title = coalesce($2, title),
-         source_ref = coalesce($3, source_ref),
-         video_url = case when $4::text is not null then nullif($4, '') else video_url end,
-         transcript = case when $5::text is not null then nullif($5, '') else transcript end,
-         minutes = coalesce($6, minutes),
-         status = case when coalesce($3, source_ref) is not null and coalesce($3, source_ref) <> '' then 'ready' else 'needs_source' end
+         kind = coalesce($3, kind),
+         source_ref = case when $4::text is not null then nullif($4, '') else source_ref end,
+         video_url = case when $5::text is not null then nullif($5, '') else video_url end,
+         document_url = case when $6::text is not null then nullif($6, '') else document_url end,
+         transcript = case when $7::text is not null then nullif($7, '') else transcript end,
+         minutes = coalesce($8, minutes),
+         status = case
+           when ($4::text is not null and nullif($4,'') is not null) then 'ready'
+           when ($3 = 'Document' or kind = 'Document') and ($6::text is not null and nullif($6,'') is not null) then 'ready'
+           when coalesce(nullif($4,''), source_ref) is not null then 'ready'
+           else 'needs_source'
+         end
        where id = $1`,
-      [(req.params as any).id, b.title ?? null, b.sourceRef ?? null, b.videoUrl !== undefined ? b.videoUrl : null, b.transcript !== undefined ? b.transcript : null, b.minutes ?? null]
+      [
+        (req.params as any).id,
+        b.title ?? null,
+        updatedKind ?? null,
+        updatedSourceRef !== undefined ? updatedSourceRef : null,
+        b.videoUrl !== undefined ? b.videoUrl : null,
+        updatedDocUrl !== undefined ? updatedDocUrl : null,
+        b.transcript !== undefined ? b.transcript : null,
+        b.minutes ?? null,
+      ]
     );
     return { ok: true };
   });
@@ -219,6 +339,22 @@ export default async function (app: FastifyInstance) {
     const videoUrl = `/api/media/${uploadedFile.key}`;
     await audit(req.uid, 'course.upload_video', 'course', (req.params as any).id, { key: uploadedFile.key, name: uploadedFile.name });
     return reply.code(200).send({ ok: true, videoUrl, filename: uploadedFile.name });
+  });
+
+  // Upload document content for document-type lessons (PDF, Word, PowerPoint, TXT) - INSTRUCTOR ONLY
+  app.post('/studio/courses/:id/upload-document', INSTR, async (req, reply) => {
+    let uploadedFile: any = null;
+    for await (const p of (req as any).parts()) {
+      if (p.type === 'file' && p.filename) {
+        uploadedFile = await saveFile(p);
+      } else if (p.type === 'file') {
+        p.file.resume();
+      }
+    }
+    if (!uploadedFile) throw err('No document file was uploaded.');
+    const documentUrl = `/api/media/${uploadedFile.key}`;
+    await audit(req.uid, 'course.upload_document', 'course', (req.params as any).id, { key: uploadedFile.key, name: uploadedFile.name });
+    return reply.code(200).send({ ok: true, documentUrl, filename: uploadedFile.name });
   });
 
   // Manual Question creation in Studio (INSTRUCTOR ONLY)
@@ -379,8 +515,20 @@ export default async function (app: FastifyInstance) {
     const lessonCounts = await one("select count(*)::int n, count(*) filter (where source_ref is not null and source_ref <> '')::int sourced from lessons where course_id = $1", [id]);
     const qs = await one('select count(*)::int n, count(*) filter (where ai_drafted)::int ai, count(*) filter (where ai_drafted and accepted_by is null)::int ai_open from questions where course_id = $1', [id]);
     const sources = await one('select count(*)::int n, count(*) filter (where approved)::int ok from source_materials where course_id = $1', [id]);
-    const comments = await q('select cc.body, cc.created_at, u.first_name || \' \' || u.last_name as author from course_comments cc join users u on u.id = cc.author_id where cc.course_id = $1 order by cc.created_at desc', [id]);
+    const comments = await q(
+      `select cc.id, cc.body, cc.created_at as "createdAt", cc.resolved, cc.resolved_at as "resolvedAt",
+              u.first_name || ' ' || u.last_name as author,
+              ru.first_name || ' ' || ru.last_name as "resolvedBy"
+       from course_comments cc
+       join users u on u.id = cc.author_id
+       left join users ru on ru.id = cc.resolved_by
+       where cc.course_id = $1
+       order by cc.resolved asc, cc.created_at desc`,
+      [id]
+    );
     const rubricCriteria = await q('select id, position, title, text from rubric_criteria where course_id = $1 order by position', [id]);
+
+    const unresolvedComments = comments.filter((cm: any) => !cm.resolved);
 
     const checklist = [
       { label: 'The objective is measurable', done: !!(c.objective && c.objective.trim().length > 10) },
@@ -388,6 +536,9 @@ export default async function (app: FastifyInstance) {
       { label: 'Assessment matches the objective', done: qs.n > 0 },
       { label: `AI-assisted content reviewed by a person${qs.aiOpen ? ` (${qs.aiOpen} left)` : ''}`, done: qs.aiOpen === 0 },
       ...(c.requiresPractical ? [{ label: 'Rubric criteria defined for practical task', done: rubricCriteria.length > 0 }] : []),
+      ...(comments.length > 0
+        ? [{ label: `Reviewer comments addressed (${comments.length - unresolvedComments.length}/${comments.length} resolved)`, done: unresolvedComments.length === 0 }]
+        : []),
     ];
 
     return {
@@ -406,6 +557,27 @@ export default async function (app: FastifyInstance) {
     const b = z.object({ body: z.string().trim().min(1).max(1000) }).parse(req.body);
     await q('insert into course_comments(course_id, author_id, body) values ($1,$2,$3)', [(req.params as any).id, req.uid, b.body]);
     return { ok: true };
+  });
+
+  app.patch('/studio/courses/:id/comments/:commentId/resolve', BOTH, async (req) => {
+    const { id, commentId } = req.params as any;
+    const b = z.object({ resolved: z.boolean() }).parse(req.body);
+
+    const c = await one('select id from course_comments where id = $1 and course_id = $2', [commentId, id]);
+    if (!c) throw err('Comment not found.', 404);
+
+    if (b.resolved) {
+      await q(
+        'update course_comments set resolved = true, resolved_by = $1, resolved_at = now() where id = $2',
+        [req.uid, commentId]
+      );
+    } else {
+      await q(
+        'update course_comments set resolved = false, resolved_by = null, resolved_at = null where id = $1',
+        [commentId]
+      );
+    }
+    return { ok: true, resolved: b.resolved };
   });
 
   // ONE-CLICK COURSE VERSION SNAPSHOTTING ON PUBLISH

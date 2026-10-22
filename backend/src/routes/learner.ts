@@ -40,8 +40,9 @@ async function recompute(uid: string, courseId: string) {
 
 export default async function (app: FastifyInstance) {
   const U = { preHandler: app.role() };
+  const LEARNER = { preHandler: app.role('learner') };
 
-  app.get('/home', U, async (req) => {
+  app.get('/home', LEARNER, async (req) => {
     const uid = req.uid;
     const counts = await one(
       `select count(*) filter (where status <> 'completed')::int in_progress,
@@ -75,14 +76,25 @@ export default async function (app: FastifyInstance) {
     return { counts, credentials: creds.n, continue: cont ? { ...cont, lesson } : null, dueSoon, feedback, recommended: rec, unread: unread.n };
   });
 
-  app.get('/catalogue', U, async (req) => {
+  app.get('/catalogue', LEARNER, async (req) => {
     const { q: term } = req.query as any;
     const rows = await q(
       `select c.id, c.title, c.kind, c.hours, c.level, c.icon, c.category, e.status as enrol_status, coalesce(e.required, false) as required,
          coalesce(e.progress, 0) as progress, (sc.course_id is not null) as saved,
-         (select count(*)::int from path_courses pc where pc.path_id = c.id) as course_count
-       from courses c left join enrolments e on e.user_id = $1 and e.course_id = c.id
+         (select count(*)::int from path_courses pc where pc.path_id = c.id) as course_count,
+         c.prerequisite_id as "prerequisiteId",
+         pre.title as "prerequisiteTitle",
+         case 
+           when c.prerequisite_id is null then true
+           else (
+             exists (select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.prerequisite_id and cr.status = 'valid')
+             or exists (select 1 from enrolments pe where pe.user_id = $1 and pe.course_id = c.prerequisite_id and pe.status = 'completed')
+           )
+         end as "prerequisiteMet"
+       from courses c 
+       left join enrolments e on e.user_id = $1 and e.course_id = c.id
        left join saved_courses sc on sc.user_id = $1 and sc.course_id = c.id
+       left join courses pre on pre.id = c.prerequisite_id
        where c.status = 'published' and ($2::text is null or c.title ilike $2 or c.category ilike $2 or coalesce(c.summary, '') ilike $2)
        order by coalesce(e.required, false) desc, c.title`,
       [req.uid, term ? `%${term}%` : null]
@@ -90,12 +102,26 @@ export default async function (app: FastifyInstance) {
     return rows;
   });
 
-  app.post('/courses/:id/enrol', U, async (req) => {
+  app.post('/courses/:id/enrol', LEARNER, async (req) => {
     const { id } = req.params as any;
+    const c = await one('select id, title, prerequisite_id as "prerequisiteId" from courses where id = $1', [id]);
+    if (!c) throw nf('That course was not found.');
+    if (c.prerequisiteId) {
+      const preCheck = await one(
+        `select c.id, c.title,
+                (exists(select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.id and cr.status = 'valid')
+                 or exists(select 1 from enrolments pe where pe.user_id = $1 and pe.course_id = c.id and pe.status = 'completed')) as done
+         from courses c where c.id = $2`,
+        [req.uid, c.prerequisiteId]
+      );
+      if (!preCheck?.done) {
+        throw nf(`Prerequisite required: You must complete "${preCheck?.title || 'the prerequisite course'}" before enrolling in this course.`, 403);
+      }
+    }
     await q('insert into enrolments(user_id, course_id) values ($1,$2) on conflict do nothing', [req.uid, id]);
     return { ok: true };
   });
-  app.post('/courses/:id/save', U, async (req) => {
+  app.post('/courses/:id/save', LEARNER, async (req) => {
     const { id } = req.params as any;
     const r = await q('delete from saved_courses where user_id = $1 and course_id = $2 returning 1', [req.uid, id]);
     if (!r.length) await q('insert into saved_courses values ($1,$2)', [req.uid, id]);
@@ -111,7 +137,10 @@ export default async function (app: FastifyInstance) {
     const children = c.kind === 'path' ? await q('select c.id, c.title, c.hours from path_courses pc join courses c on c.id = pc.course_id where pc.path_id = $1 order by pc.position', [id]) : [];
     const pre = c.prerequisiteId
       ? await one(
-          `select c.title, exists(select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.id and cr.status = 'valid') as done from courses c where c.id = $2`,
+          `select c.id, c.title, c.level,
+                  (exists(select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.id and cr.status = 'valid')
+                   or exists(select 1 from enrolments pe where pe.user_id = $1 and pe.course_id = c.id and pe.status = 'completed')) as done
+           from courses c where c.id = $2`,
           [req.uid, c.prerequisiteId])
       : null;
     const parent = await one('select p.title, pc.position, (select count(*)::int from path_courses x where x.path_id = p.id) as total from path_courses pc join courses p on p.id = pc.path_id where pc.course_id = $1 limit 1', [id]);
@@ -124,8 +153,20 @@ export default async function (app: FastifyInstance) {
 
   app.get('/lessons/:id', U, async (req) => {
     const { id } = req.params as any;
-    const l = await one('select l.*, c.title as course_title from lessons l join courses c on c.id = l.course_id where l.id = $1', [id]);
+    const l = await one('select l.*, c.title as course_title, c.prerequisite_id as "prerequisiteId" from lessons l join courses c on c.id = l.course_id where l.id = $1', [id]);
     if (!l) throw nf('That lesson was not found.');
+    if (l.prerequisiteId) {
+      const preCheck = await one(
+        `select c.title,
+                (exists(select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.id and cr.status = 'valid')
+                 or exists(select 1 from enrolments pe where pe.user_id = $1 and pe.course_id = c.id and pe.status = 'completed')) as done
+         from courses c where c.id = $2`,
+        [req.uid, l.prerequisiteId]
+      );
+      if (!preCheck?.done) {
+        throw nf(`You cannot access this lesson until you complete the prerequisite course: "${preCheck?.title || 'Required prerequisite'}".`, 403);
+      }
+    }
     const lp = await one('select position_seconds from lesson_progress where user_id = $1 and lesson_id = $2', [req.uid, id]);
     const outline = await lessonStates(req.uid, l.courseId);
     return { id: l.id, courseId: l.courseId, courseTitle: l.courseTitle, position: l.position, total: outline.length, title: l.title, minutes: l.minutes, transcript: l.transcript, videoUrl: l.videoUrl, positionSeconds: lp?.positionSeconds ?? 0, outline };
@@ -150,7 +191,20 @@ export default async function (app: FastifyInstance) {
   // Knowledge check (graded). Correct answers never leave the server until after submission.
   app.get('/courses/:id/quiz', U, async (req) => {
     const { id } = req.params as any;
-    const c = await one('select title, objective, pass_mark from courses where id = $1', [id]);
+    const c = await one('select title, objective, prerequisite_id as "prerequisiteId", pass_mark as "passMark", coalesce(quiz_time_limit_minutes, 10) as "quizTimeLimitMinutes" from courses where id = $1', [id]);
+    if (!c) throw nf('That course was not found.');
+    if (c.prerequisiteId) {
+      const preCheck = await one(
+        `select c.title,
+                (exists(select 1 from credentials cr where cr.user_id = $1 and cr.course_id = c.id and cr.status = 'valid')
+                 or exists(select 1 from enrolments pe where pe.user_id = $1 and pe.course_id = c.id and pe.status = 'completed')) as done
+         from courses c where c.id = $2`,
+        [req.uid, c.prerequisiteId]
+      );
+      if (!preCheck?.done) {
+        throw nf(`You cannot take this knowledge check until you complete the prerequisite course: "${preCheck?.title || 'Required prerequisite'}".`, 403);
+      }
+    }
     const questions = await q(
       `select qn.id, qn.prompt, (select json_agg(json_build_object('id', o.id, 'label', o.label, 'text', o.text) order by o.label) from options o where o.question_id = qn.id) as options
        from questions qn where qn.course_id = $1 and (qn.ai_drafted = false or qn.accepted_by is not null) order by qn.position`, [id]);

@@ -34,7 +34,7 @@ export default function CatalogueView({ mine, initialQ }: { mine?: boolean; init
       {items.map(([k, l]) => <div key={k} className="m-row" style={{ gap: 12 }}><Check on={k.startsWith('len') ? len.includes(k.slice(3)) : !!f[k]} onChange={() => (k.startsWith('len') ? toggleLen(k.slice(3)) : tg(k))} label={l} /><span>{l}</span></div>)}</div>
   );
   return (
-    <Shell>
+    <Shell allow={['learner']}>
       <Head title={mine ? 'My Learning' : 'Catalogue'} sub={mine ? 'Courses and paths you have been assigned or chosen.' : 'Find a course or path. Required training is marked so nothing is missed.'}>
         <div className="m-in" style={{ height: 46, padding: '0 8px 0 16px', fontWeight: 600, color: 'var(--navy)' }}>
           <label htmlFor="sort" style={{ fontWeight: 600 }}>Sort:</label>
@@ -56,16 +56,33 @@ export default function CatalogueView({ mine, initialQ }: { mine?: boolean; init
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(250px,1fr))', gap: 16 }}>
               {rows.map((c) => {
                 const st = c.enrolStatus;
-                const badge = c.required && st !== 'completed' ? <Pill k="req">Required</Pill> : st === 'completed' ? <Pill k="go">Completed</Pill> : st ? <Pill k="go">In progress</Pill> : <Pill>Chosen</Pill>;
+                const hasUnmetPrereq = Boolean(c.prerequisiteId && c.prerequisiteMet === false);
+                const badge = c.required && st !== 'completed' ? <Pill k="req">Required</Pill> : st === 'completed' ? <Pill k="go">Completed</Pill> : st ? <Pill k="go">In progress</Pill> : hasUnmetPrereq ? <Pill k="warn">Prerequisite</Pill> : <Pill>Chosen</Pill>;
                 return (
                   <div key={c.id} className="m-card" style={{ padding: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                     <Thumb icon={c.icon} badge={badge} />
                     <div style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                       <h3 className="m-h3">{c.title}</h3>
                       <div className="m-sub" style={{ fontSize: 15 }}>{c.kind === 'path' ? `Path · ${c.courseCount} courses` : `Course · ${Number(c.hours)}h`} · {c.level}</div>
+                      {hasUnmetPrereq && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 8px', marginTop: 2 }}>
+                          <I n="lock" s={14} c="#b45309" />
+                          <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            Requires: {c.prerequisiteTitle || 'Prerequisite course'}
+                          </span>
+                        </div>
+                      )}
                       <div className="m-row" style={{ justifyContent: 'space-between', marginTop: 6 }}>
                         <Link className="m-link" style={{ fontSize: 15 }} href={`/courses/${c.id}`}>View details</Link>
-                        {st ? <Btn sm href={`/courses/${c.id}`}>{st === 'completed' ? 'Review' : st === 'in_progress' ? 'Resume' : 'Start'}</Btn> : <Btn sm onClick={async () => { await api(`/courses/${c.id}/enrol`, { body: {} }); reload(); }}>Enrol</Btn>}
+                        {st ? (
+                          <Btn sm href={`/courses/${c.id}`}>{st === 'completed' ? 'Review' : st === 'in_progress' ? 'Resume' : 'Start'}</Btn>
+                        ) : hasUnmetPrereq ? (
+                          <Btn sm kind="sec" href={`/courses/${c.id}`}>
+                            <I n="lock" s={14} />&nbsp; Prerequisite
+                          </Btn>
+                        ) : (
+                          <Btn sm onClick={async () => { await api(`/courses/${c.id}/enrol`, { body: {} }); reload(); }}>Enrol</Btn>
+                        )}
                       </div>
                       <button className="m-link" style={{ fontSize: 14, alignSelf: 'flex-start', fontWeight: 600 }} aria-pressed={c.saved} onClick={async () => { await api(`/courses/${c.id}/save`, { body: {} }); reload(); }}>{c.saved ? 'Saved' : 'Save for later'}</button>
                     </div>

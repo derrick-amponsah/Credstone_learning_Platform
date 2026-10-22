@@ -70,12 +70,13 @@ const cred = (u: string, c: string, title: string, code: string, issued: number,
 
   // People
   const admin = await user('Alex', 'Admin', 'admin@credstone.com', ['admin']);
+  const derrick = await user('Derrick', 'Amponsah', 'derrick@credstone.com', ['admin']);
   const jamie = await user('Jamie', 'Doe', 'jamie.doe@credstone.com', ['learner'], { emp: 'CT-20418', level: 'Just starting' });
-  const priya = await user('Priya', 'Shah', 'priya.shah@credstone.com', ['supervisor', 'learner']);
-  const marcus = await user('Marcus', 'Reid', 'marcus.reid@credstone.com', ['supervisor', 'learner']);
-  const dana = await user('Dana', 'Cole', 'dana.cole@credstone.com', ['supervisor', 'learner']);
-  const ana = await user('Ana', 'Lopez', 'ana.lopez@credstone.com', ['instructor', 'learner']);
-  const ravi = await user('Ravi', 'Patel', 'ravi.patel@credstone.com', ['training_owner', 'learner']);
+  const priya = await user('Priya', 'Shah', 'priya.shah@credstone.com', ['supervisor']);
+  const marcus = await user('Marcus', 'Reid', 'marcus.reid@credstone.com', ['supervisor']);
+  const dana = await user('Dana', 'Cole', 'dana.cole@credstone.com', ['supervisor']);
+  const ana = await user('Ana', 'Lopez', 'ana.lopez@credstone.com', ['instructor']);
+  const ravi = await user('Ravi', 'Patel', 'ravi.patel@credstone.com', ['training_owner']);
   const sam = await user('Sam', 'Morgan', 'sam.morgan@credstone.com', ['assessor']);
   const pending = await user('Taylor', 'Kim', 'taylor.kim@credstone.com', [], { status: 'pending', source: 'signup', emp: 'CT-30551', created: ts(0) });
   const L: string[] = [];

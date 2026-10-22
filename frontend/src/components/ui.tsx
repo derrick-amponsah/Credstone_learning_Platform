@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { useId } from 'react';
+import { useId, useEffect, useState } from 'react';
 
 const SH = '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>';
 const ICONS: Record<string, string> = {
@@ -59,6 +59,8 @@ const ICONS: Record<string, string> = {
   contrast: '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 010 18z" fill="currentColor"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-.9.6-1.5 1-1.5 2M12 17h.01"/>',
   xc: '<circle cx="12" cy="12" r="10"/><path d="M9 9l6 6M15 9l-6 6"/>',
+  trash: '<path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/>',
+  external: '<path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/>',
 };
 
 export function I({ n, s = 20, c }: { n: string; s?: number; c?: string }) {
@@ -153,6 +155,115 @@ export function Empty({ icon = 'info', title, text, action }: { icon?: string; t
   return (
     <div className="m-card" style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: 32 }}>
       <Disc n={icon} size={56} sand /><div className="m-h3">{title}</div>{text && <div className="m-sub" style={{ maxWidth: 440 }}>{text}</div>}{action}
+    </div>
+  );
+}
+
+// ── Toast popup notification ──────────────────────────────────────────────────
+type ToastKind = 'ok' | 'warn' | 'info';
+export interface ToastData { k: ToastKind; t: string; }
+
+export function Toast({ toast, onDone }: { toast: ToastData | null; onDone: () => void }) {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (!toast) return;
+    setVisible(true);
+    const hide = setTimeout(() => setVisible(false), 3800);
+    const done = setTimeout(() => { setVisible(false); onDone(); }, 4300);
+    return () => { clearTimeout(hide); clearTimeout(done); };
+  }, [toast]);
+
+  if (!toast) return null;
+
+  const bg = toast.k === 'ok' ? '#10b981' : toast.k === 'warn' ? '#f59e0b' : '#3b82f6';
+  const iconN = toast.k === 'ok' ? 'checkc' : toast.k === 'warn' ? 'warn' : 'info';
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: 'fixed',
+        top: 24,
+        right: 24,
+        zIndex: 10000,
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: 14,
+        background: '#fff',
+        border: `1.5px solid ${bg}`,
+        borderRadius: 14,
+        boxShadow: '0 8px 32px rgba(16,28,54,0.18)',
+        padding: '16px 20px',
+        maxWidth: 380,
+        minWidth: 260,
+        transform: visible ? 'translateY(0) scale(1)' : 'translateY(-18px) scale(0.97)',
+        opacity: visible ? 1 : 0,
+        transition: 'transform 0.28s cubic-bezier(.34,1.56,.64,1), opacity 0.25s ease',
+        pointerEvents: visible ? 'auto' : 'none',
+      }}
+    >
+      {/* Coloured icon circle */}
+      <span style={{
+        background: bg,
+        borderRadius: '50%',
+        width: 36,
+        height: 36,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        color: '#fff',
+      }}>
+        <I n={iconN} s={18} c="#fff" />
+      </span>
+
+      {/* Message */}
+      <div style={{ flex: 1, paddingTop: 6 }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--navy)', marginBottom: 2 }}>
+          {toast.k === 'ok' ? 'Success' : toast.k === 'warn' ? 'Warning' : 'Notice'}
+        </div>
+        <div style={{ fontSize: 13.5, color: 'var(--ink)', lineHeight: 1.45 }}>{toast.t}</div>
+      </div>
+
+      {/* Dismiss button */}
+      <button
+        aria-label="Dismiss notification"
+        onClick={() => { setVisible(false); setTimeout(onDone, 250); }}
+        style={{
+          background: 'none',
+          border: 'none',
+          cursor: 'pointer',
+          color: 'var(--ink-muted)',
+          padding: 2,
+          marginTop: 2,
+          display: 'flex',
+          flexShrink: 0,
+        }}
+      >
+        <I n="xc" s={18} />
+      </button>
+
+      {/* Progress bar */}
+      <div style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        height: 3,
+        borderRadius: '0 0 14px 14px',
+        background: bg,
+        width: '100%',
+        transformOrigin: 'left',
+        animation: visible ? 'toast-shrink 3.8s linear forwards' : 'none',
+      }} />
+
+      <style>{`
+        @keyframes toast-shrink {
+          from { transform: scaleX(1); }
+          to   { transform: scaleX(0); }
+        }
+      `}</style>
     </div>
   );
 }

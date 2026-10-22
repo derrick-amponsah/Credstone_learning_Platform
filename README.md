@@ -9,12 +9,32 @@ Credstone Learning delivers end-to-end learning workflows—from document-based 
 ## Key Highlights
 
 - **Sub-55ms p95 Latency**: Engineered for speed with Fastify, native PostgreSQL queries, and an active Redis permission cache (verified by automated load testing).
-- **Strict Role-Based Governance**: Six distinct personas with enforced separation of concerns—content instructors cannot approve courses, and training owners cannot alter drafts.
-- **Rich Course Studio**: Supports PDF/DOCX source document ingestion, measurable objective validation, hand-crafted quiz generation, and direct video file uploads with HTTP 206 range-based streaming.
+- **Strict Role-Based Governance**: Six distinct personas with enforced separation of concerns—content instructors cannot approve courses, training owners cannot alter drafts, and enrolment is reserved exclusively for learners.
+- **Tri-Factor Competency Verification**: Validates real-world skills through 1) Timed knowledge checks with server-enforced passing scores, 2) Assessor evaluations against multi-item rubrics, and 3) Supervisor on-the-job observational checklists.
+- **Learner-Only Catalogue & Enrolment**: Enrolment and catalogue browsing are strictly guarded for learners (`app.role('learner')`). Instructors, training owners, supervisors, and assessors have focused, decluttered operational workspaces with zero audit contamination.
+- **Integrated S3 Object Storage (MinIO)**: S3-compatible media and document storage included out-of-the-box via Docker Compose, eliminating reliance on paid AWS cloud storage for local development and self-hosted deployments.
+- **Rich Course Studio**: Supports PDF/DOCX source document ingestion, measurable objective validation, hand-crafted quiz generation, and dual-format lessons (direct video upload with HTTP 206 range-based streaming or document reading guides).
+- **Dynamic Prerequisite Chaining**: Enforces foundational learning by locking courses, lessons, and quizzes until prerequisite credentials or completions are verified.
 - **Practical Assessment & Rubric Engine**: Multi-criterion rubric grading for on-the-job tasks with formative feedback and pass/resubmit workflows.
 - **Immutable Course Versioning**: Publishing a course takes an immutable JSONB snapshot of lessons, quiz questions, and rubric criteria to ensure active learners are unaffected by ongoing draft revisions.
 - **Verifiable Credentials & Active Renewal**: Digital certificate generation with public validation URLs (`/verify/:code`) and self-service compliance renewal flows.
 - **Enterprise Security**: Native Bcrypt (cost 10), HTTP security headers (`DENY`, `nosniff`), rate limiting, dual-path user onboarding, and an immutable audit trail.
+
+---
+
+## Competitive Comparison (Credstone vs. Coursera vs. Udemy)
+
+| Capability / Dimension | **Credstone Learning** | **Coursera (Enterprise)** | **Udemy (Business)** |
+| :--- | :--- | :--- | :--- |
+| **Primary Focus** | **Regulated workplace competency & compliance** | Academic degrees, theoretical upskilling | Broad skill libraries, hobby/software tutorials |
+| **Governance & Role Separation** | **Strict 6-Role RBAC**: Content author cannot approve courses; assessor cannot edit content; admin cannot alter grades | Single Instructor / Admin model. No formal conflict-of-interest segregation | No separation. Anyone with creator access publishes directly |
+| **Competency Verification** | **Tri-Factor Model**: Timed quizzes + Assessor rubric grading + Supervisor on-the-job observation | Quizzes + Peer-to-peer grading (unreliable & prone to gaming) | Passive video progress bar + optional multiple-choice quiz |
+| **Course Approval Workflow** | **Two-Man Rule (Maker-Checker)**: Instructor drafts &rarr; Training Owner audits checklist & approves before publish | Instructor publishes directly or via university partner review | Individual instructor publishes to open marketplace |
+| **Enrolment Governance** | **Learners only**: Non-learners cannot enrol, preventing audit contamination | Anyone can enrol and browse | Open consumer marketplace model |
+| **Supervisory Oversight** | **Direct on-the-job observation checklists** & RFC-4180 audit exports | Aggregate usage dashboards only (minutes watched) | Aggregate minutes watched and course start metrics |
+| **Data Sovereignty & Privacy** | **Private deployment (Docker / MinIO / PostgreSQL)**. 100% customer-owned data, zero third-party leak | Multi-tenant US public cloud SaaS (vendor lock-in) | Multi-tenant public cloud SaaS (vendor lock-in) |
+| **Cost Model** | **Self-hosted / Private Enterprise**: Zero per-seat recurring license tax | **Expensive**: ~$400/user/year recurring enterprise fee | **Recurring**: ~$360/user/year recurring subscription |
+| **Audit & Retention Policies** | **Configurable retention engine**: Purges practice data after 6 months; preserves compliance logs for 7 years | Static system logs with limited export retention | Basic activity history |
 
 ---
 
@@ -57,7 +77,7 @@ Credstone Learning delivers end-to-end learning workflows—from document-based 
 | **Caching** | Redis / In-Process Memory Map | Role permission cache with automatic memory fallback |
 | **Authentication** | `@fastify/jwt`, `@fastify/cookie` | Stateless JWT stored in secure `HttpOnly`, `SameSite: Lax` cookies |
 | **Validation** | Zod 3.23 | Strict runtime validation for request bodies, credentials, and parameters |
-| **Media Handling** | `@fastify/multipart` | Direct video and document uploads (up to 250MB) with partial-content streaming |
+| **Storage & Media** | MinIO / AWS S3 / Local Disk, `@fastify/multipart` | S3-compatible storage with HTTP 206 partial range streaming for videos |
 
 ---
 
@@ -67,11 +87,11 @@ The platform enforces six distinct user roles across backend route guards and fr
 
 | Role Key | Role Name | Primary Responsibilities |
 |---|---|---|
-| `instructor` | Content Instructor | Authors courses, uploads source materials, configures video lessons/transcripts, builds quizzes, and defines practical task rubrics. |
-| `training_owner` | Training Owner | Conducts quality and compliance reviews in a dedicated Approvals queue, publishes approved courses, and inspects version snapshots. |
-| `learner` | Learner | Enrolls in courses, streams video lessons, completes quizzes, submits practical assignments, and tracks/renews credentials. |
-| `assessor` | Assessor | Grades practical assignments against course rubrics and provides structured feedback with Met / Resubmit decisions. |
-| `supervisor` | Supervisor | Monitors team compliance and readiness dashboards, logs on-the-job observations, and exports RFC-4180 CSV reports. |
+| `instructor` | Content Instructor | Authors courses, uploads source materials, configures video lessons/transcripts, builds quizzes, and defines practical task rubrics. *Cannot approve courses or enrol.* |
+| `training_owner` | Training Owner | Conducts quality and compliance reviews in a dedicated Approvals queue, publishes approved courses, and inspects version snapshots. *Cannot author courses or enrol.* |
+| `learner` | Learner | **Exclusive enrolment privileges**: Enrolls in courses, streams lessons, completes quizzes, submits practical assignments, and tracks/renews credentials. |
+| `assessor` | Assessor | Grades practical assignments against course rubrics and provides structured feedback with Met / Resubmit decisions. *Cannot edit courses or enrol.* |
+| `supervisor` | Supervisor | Monitors team compliance and readiness dashboards, logs on-the-job observations, and exports RFC-4180 CSV reports. *Cannot self-enrol.* |
 | `admin` | Administrator | Approves self-signups, issues direct credentials, assigns roles, sets data retention policies, and reviews the system audit trail. |
 
 ### Two-Path Identity Onboarding
@@ -116,13 +136,34 @@ The platform enforces six distinct user roles across backend route guards and fr
 
 ---
 
-## Getting Started
+## Quickstart with Docker & MinIO (Recommended)
+
+The entire platform—including PostgreSQL 16, Redis 7, MinIO S3 Object Storage, Fastify API, and Next.js frontend—can be launched with a single command:
+
+```bash
+docker compose up -d --build
+```
+
+- **Frontend Application**: [http://localhost:3000](http://localhost:3000)
+- **Backend API**: [http://localhost:4000](http://localhost:4000)
+- **MinIO S3 Console**: [http://localhost:9001](http://localhost:9001) (User: `minioadmin`, Pass: `minioadmin`)
+- **MinIO S3 API Endpoint**: `http://localhost:9000` (Bucket `credstone-uploads` created automatically)
+
+To populate the database with default accounts and sample courses inside Docker:
+```bash
+docker compose exec api node dist/scripts/seed.js
+```
+
+---
+
+## Manual Local Setup
 
 ### Prerequisites
 
 - **Node.js**: Version 20.0 or higher
 - **PostgreSQL**: Version 14 or higher
 - **Redis** *(Optional)*: Version 6 or higher (falls back to an in-process cache map if omitted)
+- **MinIO or S3** *(Optional)*: Defaults to local `./uploads` folder if `STORAGE_DRIVER=local`
 
 ---
 
@@ -171,8 +212,8 @@ npm run dev
 To launch the full stack with containerized PostgreSQL and Redis:
 
 ```bash
-docker compose up --build
-docker compose exec api npx tsx src/scripts/seed.ts
+docker compose up -d --build
+docker compose exec api node dist/scripts/seed.js
 # Open http://localhost:3000 in your browser
 ```
 
@@ -237,7 +278,7 @@ The platform is designed to run self-contained locally, while offering clean ada
 credstone_learning/
 ├── backend/
 │   ├── db/
-│   │   └── schema.sql                # Authoritative PostgreSQL schema (28 tables)
+│   │   └── schema.sql                # Authoritative PostgreSQL schema (35 tables)
 │   ├── src/
 │   │   ├── routes/                   # Fastify modular route handlers (auth, studio, learner, etc.)
 │   │   ├── scripts/                  # Seed, migration, and performance benchmark scripts

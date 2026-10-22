@@ -6,7 +6,13 @@ import { Alert, Btn, Check, ErrorBox, Field, I, Ic, Loading, Pill, Select } from
 import { api, fmtDate, useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
-const FILTERS: [string, string][] = [['pending', 'Waiting for a role'], ['active', 'Active'], ['rejected', 'Declined'], ['suspended', 'Suspended'], ['', 'Everyone']];
+const FILTERS: [string, string][] = [
+  ['', 'Everyone'],
+  ['active', 'Active'],
+  ['pending', 'Waiting for a role'],
+  ['suspended', 'Suspended'],
+  ['rejected', 'Declined'],
+];
 
 function RolePicker({ roles, value, onChange }: { roles: any[]; value: string[]; onChange: (v: string[]) => void }) {
   const toggle = (k: string) => onChange(value.includes(k) ? value.filter((x) => x !== k) : [...value, k]);
@@ -25,7 +31,7 @@ const statusPill = (s: string) => <Pill k={s === 'active' ? 'go' : s === 'pendin
 
 export default function AdminUsers({ searchParams }: { searchParams: { status?: string } }) {
   const { user } = useSession();
-  const [status, setStatus] = useState(searchParams.status ?? 'pending');
+  const [status, setStatus] = useState(searchParams.status ?? '');
   const [term, setTerm] = useState('');
   const list = useApi(`/admin/users?status=${status}&q=${encodeURIComponent(term)}`);
   const roles = useApi<any[]>('/admin/roles');
@@ -68,7 +74,7 @@ export default function AdminUsers({ searchParams }: { searchParams: { status?: 
         <div className="m-card" style={{ flex: 1.5, padding: '16px 0 6px', minWidth: 0 }}>
           <div className="m-row" style={{ gap: 8, padding: '0 18px 12px', flexWrap: 'wrap' }}>
             {FILTERS.map(([k, l]) => (
-              <button key={k} aria-pressed={status === k} onClick={() => setStatus(k)} className={`m-btn sm ${status === k ? '' : 'sec'}`}>{l}{k && counts[k] ? ` (${counts[k]})` : ''}</button>
+              <button key={k} aria-pressed={status === k} onClick={() => setStatus(k)} className={`m-btn sm ${status === k ? '' : 'sec'}`}>{l}{counts[k] !== undefined ? ` (${counts[k]})` : ''}</button>
             ))}
             <div className="m-in" style={{ height: 40, marginLeft: 'auto', width: 240, fontSize: 15 }}><I n="search" s={18} /><input aria-label="Search users" placeholder="Search name or email" value={term} onChange={(e) => setTerm(e.target.value)} /></div>
           </div>

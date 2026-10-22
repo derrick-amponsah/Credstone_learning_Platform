@@ -4,19 +4,23 @@ body{background:var(--surface);color:var(--ink);font-family:var(--font-sans)}
 a{color:inherit;text-decoration:none}
 :root{--z:1}
 .m-app.app{width:100%;height:calc(100vh / var(--z));min-height:0;border:0;border-radius:0;zoom:var(--z)}
-.m-app.app .m-body{overflow:auto}
-.m-app.app .m-main{min-width:0}
+.m-app.app .m-main{min-width:0;display:flex;flex-direction:column}
+.m-app.app .m-body{overflow:auto;max-width:1520px;width:100%;box-sizing:border-box}
 button{font-family:inherit}
 button.m-btn,a.m-btn{cursor:pointer;text-decoration:none}
 button.m-btn.off,button.m-btn:disabled{cursor:not-allowed}
 button.m-tg,button.m-chk,button.m-rad{padding:0;cursor:pointer}
 button.m-rad.on i{display:block}
 .m-nav{cursor:pointer;text-decoration:none}
-.m-card,.m-main,.m-body,.m-field,.m-in{max-width:100%}
+*,*::before,*::after{box-sizing:border-box}
+h1,h2,h3,h4,h5,h6,.m-h1,.m-h2,.m-h3,.m-sub,p,b,strong,label,span{overflow-wrap:break-word;word-break:normal}
+.m-card{max-width:100%;box-sizing:border-box;overflow-wrap:break-word}
+.m-main{max-width:100%;min-width:0}
+.m-btn{flex-shrink:0}
+.m-pill{flex-shrink:0;white-space:nowrap}
 .m-field{min-width:0;width:100%}
 .m-in{min-width:0;width:100%}
 .m-in input,.m-in select,.m-in textarea{border:0;outline:0;flex:1 1 0%;min-width:0;width:100%;max-width:100%;font:inherit;color:inherit;background:transparent;height:100%}
-.m-row > *{min-width:0}
 .m-in textarea{resize:none;padding:12px 0;height:100%}
 .m-in:focus-within{outline:3px solid var(--focus);outline-offset:2px}
 .m-field:focus-within{max-width:100%}

@@ -44,7 +44,7 @@ export default function ApprovalsPage() {
           </Head>
 
           {/* Metric Summary Cards */}
-          <div className="m-row" style={{ gap: 16, marginTop: 4 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 4, width: '100%' }}>
             <div
               className="m-card"
               style={{

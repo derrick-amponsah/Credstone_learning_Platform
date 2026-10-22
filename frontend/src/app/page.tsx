@@ -6,7 +6,7 @@ import { Bar, Btn, Disc, ErrorBox, Av, Loading, Pill, I } from '@/components/ui'
 import { fmtDate, useApi } from '@/lib/api';
 import { useSession } from '@/lib/session';
 
-const HOME: Record<string, string> = { admin: '/admin/users', assessor: '/review', supervisor: '/team', instructor: '/studio', training_owner: '/training' };
+const HOME: Record<string, string> = { admin: '/admin/users', assessor: '/review', supervisor: '/team', instructor: '/studio', training_owner: '/approvals' };
 
 function dueLabel(d: string) {
   const days = Math.round((new Date(d).getTime() - new Date(new Date().toDateString()).getTime()) / 864e5);
